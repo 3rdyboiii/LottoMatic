@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root_layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:background="#E0E0E0">
+
+    <!-- Red "Error" Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚠️ Warning! ⚠️"
+        android:textColor="#FF0000"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:padding="16dp"/>
+
+    <!-- Fake Error Message -->
+    <TextView
+        android:layout_width="300dp"
+        android:layout_height="wrap_content"
+        android:text="The Application has been corrupted. Please Uninstall this Application Immediately!"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:padding="8dp"/>
+
+    <!-- Infinite Loading Spinner -->
+    <ProgressBar
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:indeterminate="true"/>
+
+    <!-- Fake "Force Close" Button -->
+    <Button
+        android:id="@+id/btn_fake_close"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:text="Force Close"
+        android:backgroundTint="#FF0000"
+        android:textColor="#FFFFFF"/>
+
+</LinearLayout>

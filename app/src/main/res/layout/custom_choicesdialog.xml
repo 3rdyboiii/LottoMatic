@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:cardElevation="10dp"
+    app:cardCornerRadius="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/background1"
+        android:padding="16dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/dialogTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAlignment="center"
+            android:text="Choose option:"
+            android:textColor="@color/white"
+            android:textSize="25sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <Button
+                android:id="@+id/positiveButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:backgroundTint="@color/button1"
+                android:textSize="18sp"
+                android:text="OPTION 1" />
+
+            <View
+                android:layout_width="20dp"
+                android:layout_height="0dp"/>
+
+            <Button
+                android:id="@+id/negativeButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:backgroundTint="@color/button1"
+                android:textSize="18sp"
+                android:text="OPTION 2" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/neutralButton"
+            android:layout_width="150dp"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/button1"
+            android:textColor="@color/white"
+            android:textSize="18sp"
+            android:layout_marginTop="16dp"
+            android:layout_gravity="center"
+            android:text="Cancel" />
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

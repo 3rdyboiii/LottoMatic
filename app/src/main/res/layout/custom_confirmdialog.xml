@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:cardElevation="10dp"
+    app:cardCornerRadius="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/background1"
+        android:padding="16dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/dialogTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Confirmation for Reprinting"
+            android:textColor="@color/white"
+            android:layout_marginBottom="16dp"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/dialogDescription"
+            android:text="Are you sure you want to reprint this Combination/s?"
+            android:textColor="@color/white"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_marginTop="20dp"
+            android:gravity="end"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <Button
+                android:id="@+id/positiveButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/button1"
+                android:text="Yes" />
+
+            <View
+                android:layout_width="20dp"
+                android:layout_height="0dp"/>
+
+            <Button
+                android:id="@+id/negativeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/button1"
+                android:textColor="@color/white"
+                android:text="Cancel" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>
