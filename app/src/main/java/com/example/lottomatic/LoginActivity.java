@@ -2,182 +2,276 @@ package com.example.lottomatic;
 
 import android.app.Dialog;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.splashscreen.SplashScreen;
+
 import com.example.lottomatic.helper.Account;
 import com.example.lottomatic.helper.AppVersion;
+import com.example.lottomatic.helper.ConSQL;
 import com.example.lottomatic.helper.FakeActivity;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import okhttp3.*;
+import com.example.lottomatic.utility.NetworkChangeListener;
+
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class LoginActivity extends AppCompatActivity {
-
-    private EditText usernameTxt, passwordTxt;
+    private EditText user;
+    private EditText pass;
     private CheckBox rememberMe;
+    private ProgressBar loginProgressBar;
+    private TextView progressText;
     private Button loginButton;
-    private Dialog progressDialog;
     private SharedPreferences sharedPreferences;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private OkHttpClient httpClient = new OkHttpClient();
-    private Gson gson = new Gson();
+    NetworkChangeListener networkChangeListener = new NetworkChangeListener();
 
-    // Simple data classes
-    public static class LoginRequest {
-        public String username, password, version;
-        public LoginRequest(String u, String p, String v) {
-            username = u; password = p; version = v;
-        }
+    // Flag to track if login is in progress
+    private boolean isLoggingIn = false;
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        registerReceiver(networkChangeListener, filter);
     }
 
-    public static class LoginResponse {
-        public boolean success;
-        public String message, username, password, gross, name, code, status, version;
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unregisterReceiver(networkChangeListener);
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
         setContentView(R.layout.activity_login);
 
-        // Initialize views
-        usernameTxt = findViewById(R.id.usernameTxt);
-        passwordTxt = findViewById(R.id.passwordTxt);
-        rememberMe = findViewById(R.id.rememberMeCheckBox);
-        loginButton = findViewById(R.id.loginButton);
-        loginButton.setOnClickListener(this::login_Click);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+        }
 
-        // Progress dialog
-        progressDialog = new Dialog(this);
-        progressDialog.setContentView(R.layout.progress_layout);
-        progressDialog.setCancelable(false);
-        progressDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        user = findViewById(R.id.usernameTxt);
+        pass = findViewById(R.id.passwordTxt);
+        loginButton = findViewById(R.id.loginButton);
+        rememberMe = findViewById(R.id.rememberMeCheckBox);
+        loginProgressBar = findViewById(R.id.loginProgressBar);
+        progressText = findViewById(R.id.progressText);
 
         sharedPreferences = getSharedPreferences("loginPrefs", MODE_PRIVATE);
         checkRememberedCredentials();
-    }
 
-    private void checkRememberedCredentials() {
-        String savedUser = sharedPreferences.getString("username", null);
-        String savedPass = sharedPreferences.getString("password", null);
-        boolean isRemembered = sharedPreferences.getBoolean("rememberMe", false);
-
-        if (isRemembered && savedUser != null) {
-            usernameTxt.setText(savedUser);
-            passwordTxt.setText(savedPass);
-            rememberMe.setChecked(true);
-        }
-    }
-
-    private void login_Click(View view) {
-        String username = usernameTxt.getText().toString().trim();
-        String password = passwordTxt.getText().toString().trim();
-
-        if (username.isEmpty()) {
-            usernameTxt.setError("Username is required");
-            return;
-        }
-        if (password.isEmpty()) {
-            passwordTxt.setError("Password is required");
-            return;
-        }
-
-        Toast.makeText(this, "Logging in...", Toast.LENGTH_SHORT).show();
-
-        executor.execute(() -> {
-            try {
-                // Create and send request
-                LoginRequest loginRequest = new LoginRequest(username, password, AppVersion.VERSION_NAME);
-                String jsonBody = gson.toJson(loginRequest);
-
-                Request request = new Request.Builder()
-                        .url("https://tdie91wa4d.execute-api.ap-southeast-1.amazonaws.com/UserInfo/login")
-                        .post(RequestBody.create(jsonBody, MediaType.parse("application/json")))
-                        .addHeader("Content-Type", "application/json")
-                        .build();
-
-                try (Response response = httpClient.newCall(request).execute()) {
-                    if (response.body() != null) {
-                        String responseData = response.body().string();
-
-                        if (response.isSuccessful()) {
-                            // Parse nested response
-                            JsonObject fullResponse = gson.fromJson(responseData, JsonObject.class);
-                            String bodyJson = fullResponse.get("body").getAsString();
-                            LoginResponse loginResponse = gson.fromJson(bodyJson, LoginResponse.class);
-
-                            handleLoginResponse(loginResponse, username, password);
-                        } else {
-                            runOnUiThread(() -> {
-                                usernameTxt.setError("Server error: " + response.code());
-                                passwordTxt.setText("");
-                            });
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    Toast.makeText(LoginActivity.this, "Network error", Toast.LENGTH_SHORT).show();
-                });
-            }
-        });
-    }
-
-    private void handleLoginResponse(LoginResponse loginResponse, String username, String password) {
-        runOnUiThread(() -> {
-
-            if (loginResponse.success) {
-                // Save user data
-                // Save username from server response\
-                Account.getInstance(this).setUsername(loginResponse.username);  // ✅ Sets username
-                Account.getInstance(this).setPassword(loginResponse.password);  // ✅ Sets username
-                Account.getInstance(this).setName(loginResponse.name);          // ✅ Sets name
-                Account.getInstance(this).setCode(loginResponse.code);
-
-                // ✅ DEBUG: Verify what we're saving
-                System.out.println("🔐 DEBUG: Saving user data - " +
-                        "Username: " + Account.getInstance(this).getUsername() + ", " +
-                        "Name: " + Account.getInstance(this).getName() + ", " +
-                        "Code: " + Account.getInstance(this).getCode());
-
-                // Handle status
-                if ("OFF".equals(loginResponse.status)) {
-                    startActivity(new Intent(this, FakeActivity.class));
-                } else {
-                    // Save credentials if remembered
-                    if (rememberMe.isChecked()) {
-                        SharedPreferences.Editor editor = sharedPreferences.edit();
-                        editor.putString("username", username);
-                        editor.putString("password", password);
-                        editor.putBoolean("rememberMe", true);
-                        editor.apply();
-                    } else {
-                        passwordTxt.setText("");
-                    }
-
-                    // Go to main activity
-                    startActivity(new Intent(LoginActivity.this, MainActivity.class));
-                    finish();
-                }
-            } else {
-                usernameTxt.setError("Invalid username or password");
-                passwordTxt.setText("");
-            }
-        });
+        loginButton.setOnClickListener(this::login_Click);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (!executor.isShutdown()) executor.shutdown();
+        // Shutdown executor to prevent memory leaks
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdownNow();
+        }
+    }
+
+    private void checkRememberedCredentials() {
+        String savedUsername = sharedPreferences.getString("username", null);
+        String savedPassword = sharedPreferences.getString("password", null);
+        boolean isRemembered = sharedPreferences.getBoolean("rememberMe", false);
+
+        if (isRemembered) {
+            user.setText(savedUsername);
+            pass.setText(savedPassword);
+            rememberMe.setChecked(true);
+        }
+    }
+
+    private void login_Click(View view) {
+        if (isLoggingIn) {
+            return; // Prevent multiple login attempts
+        }
+
+        if (user.getText().toString().isEmpty()) {
+            user.setError("Username is required");
+            return;
+        }
+        if (pass.getText().toString().isEmpty()) {
+            pass.setError("Password is required");
+            return;
+        }
+
+        // Show progress bar and disable UI
+        showProgress(true);
+        isLoggingIn = true;
+
+        String username = user.getText().toString();
+        String password = pass.getText().toString();
+
+        executor.execute(() -> {
+            ConSQL c = new ConSQL();
+            try (Connection connection = c.conclass()) {
+                if (connection != null) {
+                    String query = "SELECT username, password, name, version, code, [group] FROM UserTB WHERE username = ? AND password = ? AND [group] = 'BICOL'";
+                    try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+                        preparedStatement.setString(1, username);
+                        preparedStatement.setString(2, password);
+                        try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                            if (resultSet.next()) {
+                                String dbVersion = resultSet.getString("version");
+                                String name = resultSet.getString("name");
+                                String code = resultSet.getString("code");
+                                String group = resultSet.getString("group");
+
+                                if (!AppVersion.VERSION_NAME.equals(dbVersion)) {
+                                    runOnUiThread(() -> {
+                                        showProgress(false);
+                                        isLoggingIn = false;
+                                        showUpdateRequiredDialog();
+                                    });
+                                    return;
+                                }
+
+                                Account.getInstance(this).setName(name);
+                                Account.getInstance(this).setCode(code);
+                                Account.getInstance(this).setGroup(group);
+                                fetchBetLimits(connection);
+
+                                runOnUiThread(() -> {
+                                    if (rememberMe.isChecked()) {
+                                        saveCredentials(username, password, true);
+                                    } else {
+                                        clearCredentials();
+                                        pass.setText("");
+                                    }
+
+                                    Toast.makeText(LoginActivity.this, "Login Successful!", Toast.LENGTH_SHORT).show();
+                                    Intent intent = new Intent(LoginActivity.this, MainActivity.class);
+                                    startActivity(intent);
+                                });
+                            } else {
+                                runOnUiThread(() -> {
+                                    showProgress(false);
+                                    isLoggingIn = false;
+                                    user.setError("Invalid username or password");
+                                    pass.setText("");
+                                    Toast.makeText(LoginActivity.this, "Login Error!", Toast.LENGTH_SHORT).show();
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    runOnUiThread(() -> {
+                        showProgress(false);
+                        isLoggingIn = false;
+                        Toast.makeText(LoginActivity.this, "Database connection failed", Toast.LENGTH_SHORT).show();
+                    });
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    showProgress(false);
+                    isLoggingIn = false;
+                    Toast.makeText(LoginActivity.this, "Database Error Occurred: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    showProgress(false);
+                    isLoggingIn = false;
+                    Toast.makeText(LoginActivity.this, "Unexpected error occurred", Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+
+    private void showProgress(boolean show) {
+        runOnUiThread(() -> {
+            if (show) {
+                loginProgressBar.setVisibility(View.VISIBLE);
+                progressText.setVisibility(View.VISIBLE);
+                loginButton.setEnabled(false);
+                loginButton.setAlpha(0.5f);
+                user.setEnabled(false);
+                pass.setEnabled(false);
+                rememberMe.setEnabled(false);
+            } else {
+                loginProgressBar.setVisibility(View.GONE);
+                progressText.setVisibility(View.GONE);
+                loginButton.setEnabled(true);
+                loginButton.setAlpha(1.0f);
+                user.setEnabled(true);
+                pass.setEnabled(true);
+                rememberMe.setEnabled(true);
+                isLoggingIn = false;
+            }
+        });
+    }
+
+    private void fetchBetLimits(Connection connection) throws SQLException {
+        String query = "SELECT GameType, LimitAmount FROM BetLimits WHERE [group] = 'BICOL'";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            Map<String, Double> limits = new HashMap<>();
+            while (rs.next()) {
+                limits.put(rs.getString("GameType"), rs.getDouble("LimitAmount"));
+            }
+
+            // Store in Account class
+            Account.getInstance(this).setBetLimits(limits);
+        }
+    }
+
+    private void showUpdateRequiredDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Update Required");
+        builder.setMessage("Your app version is outdated. Please update to the latest version to continue using the application.");
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            dialog.dismiss();
+        });
+        builder.setCancelable(false);
+        AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+
+    private void saveCredentials(String username, String password, boolean rememberMeChecked) {
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putString("username", username);
+        editor.putString("password", password);
+        editor.putBoolean("rememberMe", rememberMeChecked);
+        editor.apply();
+    }
+
+    private void clearCredentials() {
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.remove("username");
+        editor.remove("password");
+        editor.remove("rememberMe");
+        editor.apply();
     }
 }

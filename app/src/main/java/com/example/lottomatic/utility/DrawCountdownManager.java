@@ -1,4 +1,4 @@
-package com.example.lottomatic.utility;
+package com.example.lottomatic.util;
 
 import android.os.CountDownTimer;
 import android.widget.TextView;
@@ -6,55 +6,52 @@ import java.util.Calendar;
 import java.util.Locale;
 
 public class DrawCountdownManager {
-    private TextView timeTxt;
-    private TextView drawTxt;
-    private CountDownTimer countDownTimer;
+    private TextView timeTextView;
     private String drawTime;
+    private CountDownTimer countDownTimer;
+    private OnCountdownListener listener;
 
-    public DrawCountdownManager(TextView timeTextView, TextView drawTextView, String drawTime) {
-        this.timeTxt = timeTextView;
-        this.drawTxt = drawTextView;
+    public interface OnCountdownListener {
+        void onDrawTimeReached();
+    }
+
+    public DrawCountdownManager(TextView timeTextView, String drawTime) {
+        this.timeTextView = timeTextView;
         this.drawTime = drawTime;
-        this.drawTxt.setText(drawTime);
+    }
+
+    public void setOnCountdownListener(OnCountdownListener listener) {
+        this.listener = listener;
     }
 
     public void startCountdown() {
-        // Stop any existing timer
-        if (countDownTimer != null) {
-            countDownTimer.cancel();
-        }
+        stopCountdown(); // Stop any existing timer
 
-        long targetTimeInMillis = getNextDrawTimeInMillis(drawTime);
-        long currentTimeInMillis = System.currentTimeMillis();
-        long timeDifference = targetTimeInMillis - currentTimeInMillis;
+        long targetTime = getTargetTimeInMillis();
+        long currentTime = System.currentTimeMillis();
+        long timeDifference = targetTime - currentTime;
 
-        // If the draw time has passed for today, set for next day
-        if (timeDifference < 0) {
-            targetTimeInMillis += 24 * 60 * 60 * 1000; // Add 24 hours
-            timeDifference = targetTimeInMillis - currentTimeInMillis;
+        // If draw time already passed, show "DRAW TIME" and notify
+        if (timeDifference <= 0) {
+            timeTextView.setText("DRAW TIME");
+            if (listener != null) {
+                listener.onDrawTimeReached();
+            }
+            return;
         }
 
         countDownTimer = new CountDownTimer(timeDifference, 1000) {
             @Override
             public void onTick(long millisUntilFinished) {
-                updateCountdownText(millisUntilFinished);
+                updateTimeText(millisUntilFinished);
             }
 
             @Override
             public void onFinish() {
-                // When countdown finishes, restart for next draw
-                timeTxt.setText("DRAW TIME!");
-                // Restart countdown for next day after a short delay
-                new CountDownTimer(5000, 1000) {
-                    @Override
-                    public void onTick(long millisUntilFinished) {
-                        // Optional: Show "Drawing..." or similar
-                    }
-                    @Override
-                    public void onFinish() {
-                        startCountdown(); // Restart for next day
-                    }
-                }.start();
+                timeTextView.setText("DRAW TIME");
+                if (listener != null) {
+                    listener.onDrawTimeReached();
+                }
             }
         }.start();
     }
@@ -62,18 +59,24 @@ public class DrawCountdownManager {
     public void stopCountdown() {
         if (countDownTimer != null) {
             countDownTimer.cancel();
+            countDownTimer = null;
         }
     }
 
-    private long getNextDrawTimeInMillis(String drawTime) {
+    public boolean isDrawTime() {
+        long targetTime = getTargetTimeInMillis();
+        return System.currentTimeMillis() >= targetTime;
+    }
+
+    private long getTargetTimeInMillis() {
         Calendar calendar = Calendar.getInstance();
 
-        // Parse the draw time (format: "2:00 PM", "5:00 PM", "9:00 PM")
-        String[] timeParts = drawTime.split(":");
-        int hour = Integer.parseInt(timeParts[0].trim());
-        String minuteAndPeriod = timeParts[1].trim();
-        int minute = Integer.parseInt(minuteAndPeriod.split(" ")[0]);
-        String period = minuteAndPeriod.split(" ")[1];
+        // Parse time like "2:00 PM"
+        String[] parts = drawTime.split(":");
+        int hour = Integer.parseInt(parts[0].trim());
+        String[] minutePart = parts[1].trim().split(" ");
+        int minute = Integer.parseInt(minutePart[0]);
+        String period = minutePart[1];
 
         // Convert to 24-hour format
         if (period.equalsIgnoreCase("PM") && hour != 12) {
@@ -82,22 +85,31 @@ public class DrawCountdownManager {
             hour = 0;
         }
 
-        // Set the target time
+        // Set target time for today
         calendar.set(Calendar.HOUR_OF_DAY, hour);
         calendar.set(Calendar.MINUTE, minute);
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
 
-        return calendar.getTimeInMillis();
+        long targetTime = calendar.getTimeInMillis();
+        long currentTime = System.currentTimeMillis();
+
+        // If target time passed, set for tomorrow
+        if (targetTime <= currentTime) {
+            calendar.add(Calendar.DAY_OF_MONTH, 1);
+            return calendar.getTimeInMillis();
+        }
+
+        return targetTime;
     }
 
-    private void updateCountdownText(long millisUntilFinished) {
+    private void updateTimeText(long millisUntilFinished) {
         long hours = millisUntilFinished / (1000 * 60 * 60);
         long minutes = (millisUntilFinished % (1000 * 60 * 60)) / (1000 * 60);
         long seconds = (millisUntilFinished % (1000 * 60)) / 1000;
 
-        String countdownText = String.format(Locale.getDefault(),
+        String timeText = String.format(Locale.getDefault(),
                 "%02dH : %02dM : %02dS", hours, minutes, seconds);
-        timeTxt.setText(countdownText);
+        timeTextView.setText(timeText);
     }
 }

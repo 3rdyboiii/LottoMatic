@@ -139,7 +139,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
     private TextView totalTxt, displaytxt, winthreetxt, titleTxt, maxBetTxt, drawTxt;
     private EditText comboInput, stretInput, rambolInput;
     private Button addBtn, clearBtn, printBtn;
-    private String Name = "", Code = "", comborcpt = "", betrcpt = "", totalrcpt = "", username = "", transCode = "",
+    private String draw = "", Name = "", Code = "", comborcpt = "", betrcpt = "", totalrcpt = "", username = "", transCode = "",
             transCode2 = "", transCode3 = "", combo = "", bet = "", activityType = "", selectedGame = "", drawTime = "", gameDraw, gameName;
     private ImageView gameimage;
     private double totalSum = 0, win4D = 4000, win3D = 500, win2D = 35, limit3D = 1000, limit4D = 100, limit2D = 1000;
@@ -235,16 +235,18 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         gameDraw = intent.getStringExtra("gameDraw");
         gameName = intent.getStringExtra("gameName");
         gameimage.setImageResource(gameImage);
-        String draw = "";
         switch (gameDraw) {
             case "2:00 PM":
                 draw = "2PM DRAW";
+                drawTime = "2PM";
                 break;
             case "5:00 PM":
                 draw = "5PM DRAW";
+                drawTime = "5PM";
                 break;
             case "9:00 PM":
                 draw = "9PM DRAW";
+                drawTime = "9PM";
                 break;
         }
         drawTxt.setText(draw);
@@ -1937,7 +1939,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
                 for (EntryItem item : itemList) {
                     String combo = item.getCombo();
-                    String game = item.getGame().replaceAll("\\dPM", "").replace("R", "");
+                    String game = item.getGame();
                     BigDecimal totalAmount = BigDecimal.valueOf(item.getAmount());
                     BigDecimal shareAmount = totalAmount;
                     BigDecimal prize = new BigDecimal(item.getPrize().replace(",", ""));

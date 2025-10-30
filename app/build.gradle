@@ -41,10 +41,6 @@ dependencies {
 
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.viewpager2:viewpager2:1.0.0'
-
-    implementation 'com.squareup.okhttp3:okhttp:4.9.3'
-    implementation 'com.google.code.gson:gson:2.8.9'
-
     implementation 'com.github.DantSu:ESCPOS-ThermalPrinter-Android:3.3.0'
     implementation "androidx.core:core-splashscreen:1.0.1"
     implementation 'com.github.bumptech.glide:glide:4.15.1'

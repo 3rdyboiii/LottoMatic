@@ -9,7 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.lottomatic.R;
 import com.example.lottomatic.items.MenuItem;
-import com.example.lottomatic.utility.DrawCountdownManager;
+import com.example.lottomatic.util.DrawCountdownManager;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,7 +18,6 @@ public class home_games_adapter extends RecyclerView.Adapter<home_games_adapter.
     private List<DrawCountdownManager> countdownManagers;
     private OnItemClickListener onItemClickListener;
 
-    // Interface for click listener
     public interface OnItemClickListener {
         void onItemClick(int position, MenuItem item);
     }
@@ -28,7 +27,6 @@ public class home_games_adapter extends RecyclerView.Adapter<home_games_adapter.
         this.countdownManagers = new ArrayList<>();
     }
 
-    // Set the click listener
     public void setOnItemClickListener(OnItemClickListener listener) {
         this.onItemClickListener = listener;
     }
@@ -42,66 +40,54 @@ public class home_games_adapter extends RecyclerView.Adapter<home_games_adapter.
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        MenuItem entryItem = items.get(position);
-        holder.image.setImageResource(entryItem.getImageResId());
-        holder.drawTxt.setText(entryItem.getDraw());
-        holder.prizeTxt.setText("₱" + entryItem.getPrize());
+        MenuItem item = items.get(position);
 
-        // Initialize or update countdown manager
+        // Set basic item data
+        holder.image.setImageResource(item.getImageResId());
+        holder.drawTxt.setText(item.getDraw());
+        holder.prizeTxt.setText("₱" + item.getPrize());
+
+        // Stop previous countdown for this position
         if (position < countdownManagers.size() && countdownManagers.get(position) != null) {
-            // Stop existing countdown
             countdownManagers.get(position).stopCountdown();
         }
 
-        // Create new countdown manager
+        // Create and start new countdown
         DrawCountdownManager countdownManager = new DrawCountdownManager(
-                holder.timeTxt, holder.drawTxt, entryItem.getDraw()
+                holder.timeTxt, item.getDraw()
         );
-        countdownManager.startCountdown();
 
-        // Store reference
+        countdownManager.setOnCountdownListener(() -> {
+            // Disable item when draw time is reached
+            holder.itemView.setEnabled(false);
+            holder.itemView.setAlpha(0.5f);
+        });
+
+        // Store manager and start countdown
         if (position < countdownManagers.size()) {
             countdownManagers.set(position, countdownManager);
         } else {
             countdownManagers.add(countdownManager);
         }
 
-        // Set click listener for the entire item view
-        holder.itemView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (onItemClickListener != null) {
-                    onItemClickListener.onItemClick(position, entryItem);
-                }
+        countdownManager.startCountdown();
+
+        // Set initial enabled state
+        boolean enabled = !countdownManager.isDrawTime();
+        holder.itemView.setEnabled(enabled);
+        holder.itemView.setAlpha(enabled ? 1.0f : 0.5f);
+
+        // Set click listener
+        holder.itemView.setOnClickListener(v -> {
+            if (holder.itemView.isEnabled() && onItemClickListener != null) {
+                onItemClickListener.onItemClick(position, item);
             }
         });
-
-        // Optional: Add visual feedback for clickable items
-        holder.itemView.setClickable(true);
-        holder.itemView.setFocusable(true);
     }
 
     @Override
     public int getItemCount() {
         return items.size();
-    }
-
-    public MenuItem getItem(int position) {
-        return items.get(position);
-    }
-
-    public void setItems(List<MenuItem> items) {
-        // Stop all existing countdowns
-        stopAllCountdowns();
-
-        this.items = items;
-        this.countdownManagers = new ArrayList<>();
-        notifyDataSetChanged();
-    }
-
-    public void addItem(MenuItem item) {
-        items.add(item);
-        notifyItemInserted(items.size() - 1);
     }
 
     public void stopAllCountdowns() {
@@ -114,7 +100,6 @@ public class home_games_adapter extends RecyclerView.Adapter<home_games_adapter.
     }
 
     public void startAllCountdowns() {
-        // This will be handled automatically in onBindViewHolder
         notifyDataSetChanged();
     }
 
