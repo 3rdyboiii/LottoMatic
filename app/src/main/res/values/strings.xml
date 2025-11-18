@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">LottoMatic</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+
+    <string name="oops">OOPS!</string>
+
+    <string name="not_internet">No Internet Connection</string>
+
+    <string name="check_connection">Please check your internet connection.</string>
+</resources>
