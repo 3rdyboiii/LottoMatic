@@ -6,19 +6,27 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.example.lottomatic.R;
 import com.example.lottomatic.items.HistoryItem;
 
+import java.math.BigDecimal;
+import java.text.DecimalFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHolder> {
 
-    private Context context;
+    private final Context context;
     private List<HistoryItem> itemList;
+
+    private final DecimalFormat currencyFormat = new DecimalFormat("#,##0.00");
 
     public HistoryAdapter(Context context, List<HistoryItem> itemList) {
         this.context = context;
@@ -28,7 +36,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.history_item, parent, false);
+        View view = LayoutInflater.from(context).inflate(R.layout.history_item, parent, false);
         return new ViewHolder(view);
     }
 
@@ -36,16 +44,24 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         HistoryItem item = itemList.get(position);
 
-        // Set game icon based on game type
+        // Game icon
         setGameIcon(holder.gameIcon, item.getGame());
+
+        // Text fields
         holder.drawText.setText(item.getDraw() + " DRAW");
         holder.typeValue.setText(item.getGame());
         holder.comboValue.setText(item.getCombo());
-        holder.resultValue.setText(item.getResult() != null ? item.getResult() : "Pending");
+        holder.resultValue.setText(item.getResult() != null && !item.getResult().isEmpty()
+                ? item.getResult()
+                : "Pending");
+
         holder.betsValue.setText(item.getBets());
         holder.prizeValue.setText(item.getPrize());
         holder.transcodeValue.setText(item.getTranscode());
         holder.dateValue.setText(formatDate(item.getDate()));
+
+        // Winner text visibility
+        holder.winTxt.setVisibility(item.isWinner() ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -59,37 +75,37 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     }
 
     private void setGameIcon(ImageView imageView, String game) {
+        if (game == null) {
+            imageView.setImageResource(R.drawable.pcsologo);
+            return;
+        }
+
+        String g = game.trim().toLowerCase();
         int iconResId;
-        switch (game.toLowerCase()) {
-            case "4d":
-                iconResId = R.drawable.icon_4d;
-                break;
-            case "rambolito 3":
-                iconResId = R.drawable.icon_3d;
-                break;
-            case "standard":
-                iconResId = R.drawable.icon_3d;
-                break;
-            case "2d":
-                iconResId = R.drawable.icon_2d;
-                break;
-            default:
-                iconResId = R.drawable.pcsologo;
-                break;
+        if (g.contains("4d")) {
+            iconResId = R.drawable.icon_4d;
+        } else if (g.contains("3d") || g.contains("rambolito") || g.equals("standard")) {
+            iconResId = R.drawable.icon_3d;
+        } else if (g.contains("2d")) {
+            iconResId = R.drawable.icon_2d;
+        } else {
+            iconResId = R.drawable.pcsologo;
         }
         imageView.setImageResource(iconResId);
     }
 
     private String formatDate(String dateString) {
+        if (dateString == null || dateString.isEmpty()) return "";
+
         try {
-            // Parse the SQL datetime format and format it nicely
-            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("MMMM dd, yyyy - h:mm a", java.util.Locale.getDefault());
+            // Adjust input format depending on your SQL DB
+            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            SimpleDateFormat outputFormat = new SimpleDateFormat("MMMM dd, yyyy - h:mm a", Locale.getDefault());
 
             Date date = inputFormat.parse(dateString);
-            return outputFormat.format(date);
-        } catch (Exception e) {
-            return dateString; // Return original if parsing fails
+            return date != null ? outputFormat.format(date) : dateString;
+        } catch (ParseException e) {
+            return dateString; // fallback
         }
     }
 
@@ -103,6 +119,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
         TextView prizeValue;
         TextView transcodeValue;
         TextView dateValue;
+        TextView winTxt;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -115,6 +132,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
             prizeValue = itemView.findViewById(R.id.prizeValue);
             transcodeValue = itemView.findViewById(R.id.transcodeValue);
             dateValue = itemView.findViewById(R.id.dateValue);
+            winTxt = itemView.findViewById(R.id.winTxt);
         }
     }
 }

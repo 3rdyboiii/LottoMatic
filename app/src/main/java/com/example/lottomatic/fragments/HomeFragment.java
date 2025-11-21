@@ -226,17 +226,39 @@ public class HomeFragment extends Fragment {
 
     private List<MenuItem> getGameMenuList() {
         List<MenuItem> list = new ArrayList<>();
-        list.add(new MenuItem(R.drawable.icon_ultra, "ultra", "9:00 PM", "12H : 30M : 06S", "363,258,451"));
-        list.add(new MenuItem(R.drawable.icon_649, "649", "9:00 PM", "12H : 30M : 06S", "84,961,231"));
-        list.add(new MenuItem(R.drawable.icon_642, "642", "9:00 PM", "12H : 30M : 06S", "35,318,653"));
-        list.add(new MenuItem(R.drawable.icon_6d, "6D", "9:00 PM", "12H : 30M : 06S", "150,000"));
-        list.add(new MenuItem(R.drawable.icon_4d, "4D", "9:00 PM", "12H : 30M : 06S", "40,000"));
-        list.add(new MenuItem(R.drawable.icon_3d, "3D", "9:00 PM", "12H : 30M : 06S", "4,500"));
-        list.add(new MenuItem(R.drawable.icon_3d, "3D", "5:00 PM", "12H : 30M : 06S", "4,500"));
-        list.add(new MenuItem(R.drawable.icon_3d, "3D", "2:00 PM", "12H : 30M : 06S", "4,500"));
-        list.add(new MenuItem(R.drawable.icon_2d, "2D", "9:00 PM", "12H : 30M : 06S", "4,000"));
-        list.add(new MenuItem(R.drawable.icon_2d, "2D", "5:00 PM", "12H : 30M : 06S", "4,000"));
-        list.add(new MenuItem(R.drawable.icon_2d, "2D", "2:00 PM", "12H : 30M : 06S", "4,000"));
+        long now = System.currentTimeMillis();
+
+        double prize4D = Account.getInstance(getContext()).getPrize4D();
+        double prize3D = Account.getInstance(getContext()).getPrize3D();
+        double prize2D = Account.getInstance(getContext()).getPrize2D();
+
+        String prize4DStr = String.valueOf(prize4D);
+        String prize3DStr = String.valueOf(prize3D);
+        String prize2DStr = String.valueOf(prize2D);
+
+        // Convert draw time "9:00 PM" to timestamp
+        list.add(new MenuItem(R.drawable.icon_ultra, "ultra", "9:00 PM", "", "363,258,451", getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_649, "649", "9:00 PM", "", "84,961,231", getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_642, "642", "9:00 PM", "", "35,318,653", getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_6d, "6D", "9:00 PM", "", "150,000", getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_4d, "4D", "9:00 PM", "", prize4DStr, getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_3d, "3D", "9:00 PM", "", prize3DStr, getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_3d, "3D", "5:00 PM", "", prize3DStr, getTimestampForToday(17,0)));
+        list.add(new MenuItem(R.drawable.icon_3d, "3D", "2:00 PM", "", prize3DStr, getTimestampForToday(14,0)));
+        list.add(new MenuItem(R.drawable.icon_2d, "2D", "9:00 PM", "", prize2DStr, getTimestampForToday(21,0)));
+        list.add(new MenuItem(R.drawable.icon_2d, "2D", "5:00 PM", "", prize2DStr, getTimestampForToday(17,0)));
+        list.add(new MenuItem(R.drawable.icon_2d, "2D", "2:00 PM", "", prize2DStr, getTimestampForToday(14,0)));
+
         return list;
+    }
+
+    // Utility to convert hours/minutes to today timestamp
+    private long getTimestampForToday(int hour, int minute) {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, hour);
+        cal.set(Calendar.MINUTE, minute);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
     }
 }

@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -160,6 +161,7 @@ public class LoginActivity extends AppCompatActivity {
                                 Account.getInstance(this).setCode(code);
                                 Account.getInstance(this).setGroup(group);
                                 fetchBetLimits(connection);
+                                fetchPrize(connection);
 
                                 runOnUiThread(() -> {
                                     if (rememberMe.isChecked()) {
@@ -234,18 +236,60 @@ public class LoginActivity extends AppCompatActivity {
 
     private void fetchBetLimits(Connection connection) throws SQLException {
         String query = "SELECT GameType, LimitAmount FROM BetLimits WHERE [group] = 'BICOL'";
+
         try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery(query)) {
 
             Map<String, Double> limits = new HashMap<>();
+
             while (rs.next()) {
-                limits.put(rs.getString("GameType"), rs.getDouble("LimitAmount"));
+
+                String gameType = rs.getString("GameType");
+                double limitAmount = rs.getDouble("LimitAmount");
+
+                Log.d("BET_LIMITS", "Fetched → GameType: " + gameType + " | Limit: " + limitAmount);
+
+                limits.put(gameType, limitAmount);
             }
 
-            // Store in Account class
             Account.getInstance(this).setBetLimits(limits);
+
+            Log.d("BET_LIMITS", "Stored bet limits in Account: " + limits.toString());
         }
     }
+
+
+    private void fetchPrize(Connection connection) throws SQLException {
+        String query = "SELECT game, prize FROM PrizeTB WHERE [group] = 'BICOL'";
+
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            while (rs.next()) {
+
+                String game = rs.getString("game");
+                double prize = rs.getDouble("prize");
+
+                Log.d("PRIZE_FETCH", "Game: " + game + " | Prize: " + prize);
+
+                if ("4D".equals(game)) {
+                    Account.getInstance(this).setPrize4D(prize);
+                    Log.d("PRIZE_FETCH", "Set 4D prize = " + prize);
+                }
+
+                if ("3D".equals(game)) {
+                    Account.getInstance(this).setPrize3D(prize);
+                    Log.d("PRIZE_FETCH", "Set 3D prize = " + prize);
+                }
+
+                if ("2D".equals(game)) {
+                    Account.getInstance(this).setPrize2D(prize);
+                    Log.d("PRIZE_FETCH", "Set 2D prize = " + prize);
+                }
+            }
+        }
+    }
+
 
     private void showUpdateRequiredDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);

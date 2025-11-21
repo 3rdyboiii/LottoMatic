@@ -1,10 +1,6 @@
 package com.example.lottomatic;
 
-import static androidx.core.content.ContentProviderCompat.requireContext;
-
 import android.Manifest;
-import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
@@ -17,9 +13,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
-import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.net.ConnectivityManager;
@@ -27,24 +21,16 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.renderscript.Allocation;
-import android.renderscript.Element;
-import android.renderscript.RenderScript;
-import android.renderscript.ScriptIntrinsicConvolve3x3;
 import android.text.InputFilter;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.ToggleButton;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
@@ -178,7 +164,8 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         InputFilter[] filters = {new TextInputFilter()};
 
         itemList = new ArrayList<>();
-        entryAdapter = new EntryAdapter(itemList, this);
+        Account account = Account.getInstance(this);
+        entryAdapter = new EntryAdapter(itemList, this, account);
         DisplayList.setLayoutManager(new LinearLayoutManager(this));
         DisplayList.setAdapter(entryAdapter);
 
@@ -244,14 +231,12 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         } else if (gameImage == R.drawable.icon_6d) {
             drawTxt.setText("6D DRAW");
         } else if (gameImage == R.drawable.icon_2d) {
-            int maxLength = 2;
+            int maxLength = 4;
             comboInput.setFilters(new InputFilter[] { new InputFilter.LengthFilter(maxLength) });
             rambolInputLayout.setVisibility(View.GONE);
         } else {
             drawTxt.setText("DRAW");
         }
-
-        fetchWinthree();
         startCheckingTime();
     }
 
@@ -295,14 +280,40 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
     }
     private boolean hasMinimum2Digits(String input) {
         String digitsOnly = input.replaceAll("\\D", "");
-        return digitsOnly.length() >= 2;
+        return digitsOnly.length() >= 4;
     }
     @Override
     public void onTotalUpdate(double total) {
         totalTxt.setText("Total: ₱" + String.format("%.2f", total));
         /*checkRecyclerViewContent();*/
     }
-    private void showErrorMessage(String combo, Double currentLimit) {
+    @Override
+    public void onComboLimitReached(String combo, double remaining, double limit) {
+        showErrorDialog(
+                "Bet Limit Reached",
+                String.format("Maximum total bet for %s is ₱%.2f",
+                        combo,
+                        limit)
+        );
+    }
+    private void showErrorDialog(String title, String message) {
+        Dialog dialog = new Dialog(this);
+        dialog.setContentView(R.layout.custom_errordialog);
+        dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dialog.getWindow().setBackgroundDrawable(ContextCompat.getDrawable(this, R.drawable.custom_dialog_bg));
+        dialog.setCancelable(false);
+
+        Button positiveButton = dialog.findViewById(R.id.positiveButton);
+        TextView titleView = dialog.findViewById(R.id.dialogTitle);
+        TextView description = dialog.findViewById(R.id.dialogDescription);
+
+        titleView.setText(title);
+        description.setText(message);
+
+        positiveButton.setOnClickListener(buttonView -> dialog.dismiss());
+        dialog.show();
+    }
+    private void showErrorMessage(String combo) {
         Dialog dialog = new Dialog(this);
         dialog.setContentView(R.layout.custom_errordialog);
         dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -314,12 +325,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         TextView description = dialog.findViewById(R.id.dialogDescription);
 
         title.setText("Limit Reached:");
-        description.setText(String.format(
-                "The combination (%s) has reached its limit of (₱%.2f).\n\n" +
-                        "Please try a different combination or reduce your bet amount.",
-                combo,
-                currentLimit
-        ));
+        description.setText("The combination " + combo + " has reached its limit.");
 
         positiveButton.setOnClickListener(buttonView -> {
             comboInput.setText("");
@@ -329,19 +335,67 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         });
         dialog.show();
     }
-    private Set<String> WinthreeCombinations = new HashSet<>();
-    private void fetchWinthree() {
+    private String getCurrentTotalBet(List<String> combos, double amount, String game) {
+        String limitExceededCombo = null;
+        Account account = Account.getInstance(this);
+        try (Connection connection = new ConSQL().conclass()) {
+            if (connection != null) {
+                for (String combo : combos) {
+                    String query = "SELECT SUM(bets) AS totalBet FROM EntryTB WHERE combo = ? and draw = ? and game = ? and CAST([date] AS date) = ?";
+                    try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
+                        preparedStatement.setString(1, combo);
+                        preparedStatement.setString(2, drawTime);
+                        preparedStatement.setString(3, game);
+                        preparedStatement.setString(4, getCurrentDateTime());
+                        try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                            if (resultSet.next()) {
+                                double totalBet = resultSet.getDouble("totalBet");
+                                if (game.equals("4D")) {
+                                    if (amount + totalBet > account.getBetLimit(game, 50.0)) {
+                                        limitExceededCombo = combo;
+                                        return limitExceededCombo;
+                                    }
+                                } else if (game.equals("3D")) {
+                                    if (amount + totalBet > account.getBetLimit(game, 200.0)) {
+                                        limitExceededCombo = combo;
+                                        return limitExceededCombo;
+                                    }
+                                } else if ("2D".equals(game)) {
+                                    if (amount + totalBet > account.getBetLimit(game, 200.0)) {
+                                        limitExceededCombo = combo;
+                                        return limitExceededCombo;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            runOnUiThread(() -> Log.e("Error:", e.getMessage()));
+        }
+        return limitExceededCombo;
+    }
+    private Set<String> SoldoutCombinations = new HashSet<>();
+    private void fetchSoldout() {
         executor.execute(() -> {
             ConSQL c = new ConSQL();
             try (Connection connection = c.conclass()) {
                 if (connection != null) {
-                    String query = "SELECT * FROM WinThreeTB";
+                    String query = "SELECT * FROM SoldoutTB WHERE [group] = 'BICOL'";
                     try (Statement smt = connection.createStatement();
                          ResultSet set = smt.executeQuery(query)) {
 
                         while (set.next()) {
-                            String win3 = set.getString("winthree");
-                            WinthreeCombinations.add(win3);
+                            String sold = set.getString("soldout").trim();
+                            // Split by commas and add each number individually
+                            String[] numbers = sold.split(",");
+                            for (String num : numbers) {
+                                num = num.trim(); // Remove extra spaces
+                                if (!num.isEmpty()) {
+                                    SoldoutCombinations.add(num);
+                                }
+                            }
                         }
                     }
                 }
@@ -349,100 +403,6 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 Log.e("Error:", e.getMessage());
             }
         });
-    }
-    private Map<String, Double> getCurrentTotals() {
-        Map<String, Double> comboTotals = new HashMap<>();
-        List<EntryItem> currentItems = entryAdapter.getItemList();
-
-        for (EntryItem item : currentItems) {
-            String combo = item.getCombo().replace("T-", "").replace("*", "");
-            double amount = item.getAmount();
-
-            if (comboTotals.containsKey(combo)) {
-                comboTotals.put(combo, comboTotals.get(combo) + amount);
-            } else {
-                comboTotals.put(combo, amount);
-            }
-        }
-
-        return comboTotals;
-    }
-    private String checkComboLimits(List<String> combos, double amount, String game) {
-        // Check local RecyclerView items first (faster)
-        String localLimitExceededCombo = getCurrentTotalBetFromLocal(combos, amount, game);
-        if (localLimitExceededCombo != null) {
-            return localLimitExceededCombo;
-        }
-
-        // Only check database if local check passes
-        return getCurrentTotalBetFromDB(combos, amount, game);
-    }
-
-    private String getCurrentTotalBetFromLocal(List<String> combos, double amount, String game) {
-        Map<String, Double> currentTotals = getCurrentTotals();
-        double limit = getLimitForGame(game);
-
-        for (String combo : combos) {
-            // Normalize the combo for comparison
-            String normalizedCombo = normalizeCombo(combo);
-            double currentTotal = currentTotals.getOrDefault(normalizedCombo, 0.0);
-            if (currentTotal + amount > limit) {
-                return combo; // Return the original combo for error message
-            }
-        }
-        return null;
-    }
-
-    private String getCurrentTotalBetFromDB(List<String> combos, double amount, String game) {
-        String limitExceededCombo = null;
-        try (Connection connection = new ConSQL().conclass()) {
-            if (connection != null) {
-                // Create a single query for all combos to reduce database calls
-                String query = "SELECT combo, SUM(bets) AS totalBet FROM EntryTB " +
-                        "WHERE combo IN (" + createPlaceholders(combos.size()) + ") " +
-                        "AND draw = ? AND game = ? AND CAST([date] AS date) = ? " +
-                        "GROUP BY combo";
-
-                try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-                    // Set combo parameters
-                    for (int i = 0; i < combos.size(); i++) {
-                        preparedStatement.setString(i + 1, combos.get(i));
-                    }
-                    // Set other parameters
-                    preparedStatement.setString(combos.size() + 1, drawTime);
-                    preparedStatement.setString(combos.size() + 2, game);
-                    preparedStatement.setString(combos.size() + 3, getCurrentDateTime());
-
-                    try (ResultSet resultSet = preparedStatement.executeQuery()) {
-                        double limit = getLimitForGame(game);
-                        Map<String, Double> dbTotals = new HashMap<>();
-
-                        // Store all database totals first
-                        while (resultSet.next()) {
-                            String combo = resultSet.getString("combo");
-                            double totalBet = resultSet.getDouble("totalBet");
-                            dbTotals.put(combo, totalBet);
-                        }
-
-                        // Check each combo against the limit
-                        for (String combo : combos) {
-                            double dbTotal = dbTotals.getOrDefault(combo, 0.0);
-                            double localTotal = getCurrentTotals().getOrDefault(normalizeCombo(combo), 0.0);
-
-                            if (dbTotal + localTotal + amount > limit) {
-                                return combo;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            runOnUiThread(() -> {
-                Log.e("Error:", e.getMessage());
-                Toast.makeText(this, "Error checking limits. Please try again.", Toast.LENGTH_SHORT).show();
-            });
-        }
-        return null;
     }
 
     // Helper method to create SQL placeholders
@@ -468,10 +428,10 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         return combo.replaceAll("[^0-9]", "");
     }
 
-    private double getLimitForGame(String game) {
+    /*private double getLimitForGame(String game) {
         Account account = Account.getInstance(this);
         switch (game) {
-            case "P131":
+            case "2D":
                 return account.getBetLimit(game, 1000.0);
             case "3D":
                 return account.getBetLimit(game, 1000.0);
@@ -480,7 +440,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             default:
                 return 100.0; // Default limit
         }
-    }
+    }*/
 
     private void addCombination() {
         Account account = Account.getInstance(this);
@@ -495,6 +455,11 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         double prize3D = stretBet * win3D;
         double prize2D = stretBet * win2D;
         DecimalFormat decimalFormat = new DecimalFormat("####");
+
+        double prizeAmount4D = Account.getInstance(this).getPrize4D();
+        double prizeAmount3D = Account.getInstance(this).getPrize3D();
+        double prizeAmount2D = Account.getInstance(this).getPrize2D();
+
         String Prize4D = decimalFormat.format(prize4D);
         String Prize3D = decimalFormat.format(prize3D);
         String Prize2D = decimalFormat.format(prize2D);
@@ -509,9 +474,26 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
         String game = gameName;
 
-        String code = game;
+        List<String> rcomboList = new ArrayList<>();
+        if (!rambol.isEmpty()) {
+            List<String> permutations = PermutationUtil.getPermutations(combo);
+            rcomboList.addAll(permutations);
+        } else {
+            rcomboList.add(combo);
+        }
 
-        if (game.equals("4D")) {
+        String limitExceededCombo = getCurrentTotalBet(rcomboList, amount, game);
+
+        if (limitExceededCombo != null) {
+            showErrorMessage(limitExceededCombo);
+            return;
+        }
+
+        fetchSoldout();
+
+        String code = "";
+
+        /*if (game.equals("4D")) {
             String formattedResult = combo.substring(0, 2) + "-" + combo.substring(2);
 
             List<String> rcomboList = new ArrayList<>();
@@ -563,7 +545,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                         Toast.LENGTH_LONG).show();
                 return;
             }
-        }
+        }*/
 
         /*Map<String, Double> currentTotals = getCurrentTotals();
         for (String Combo : rcomboList) {
@@ -590,8 +572,6 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 return;
             }
         }*/
-
-
 
         if (game.equals("4D")) {
             if (!hasMinimum4Digits(combo)) {
@@ -632,17 +612,17 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             boolean isDateMatch = (firstTwo.equals(monthStr) && lastTwo.equals(dayStr));
             boolean isSameDigits = firstTwo.equals(lastTwo);
 
-            double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;
+            /*double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;*/
 
             if (!stret.isEmpty()) {
-                String formattedResult = combo.substring(0, 2) + "-" + combo.substring(2);
-                double prize = stretBet * prizeMultiplier;
+                String formattedResult = combo.substring(0, 2) + combo.substring(2);
+                double prize = stretBet * prizeAmount4D;
                 String formattedPrize = decimalFormat.format(prize);
                 code = "Standard";
-                EntryItem stretItem = new EntryItem(formattedResult, stretBet, code, formattedPrize);
+                EntryItem stretItem = new EntryItem(formattedResult, stretBet, game, code, formattedPrize);
                 entryAdapter.addItem(stretItem);
             }
-            if (!rambol.isEmpty()) {
+            /*if (!rambol.isEmpty()) {
                 double rambolValue = Double.parseDouble(rambol);
                 BigDecimal ramble;
                 double prize;
@@ -650,11 +630,11 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 // Calculate the base prize (without division)
                 prize = prizeMultiplier * rambolValue;
 
-                String formattedResult = combo.substring(0, 2) + "-" + combo.substring(2);
+                String formattedResult = combo.substring(0, 2) + "*" + combo.substring(2);
 
                 if (!isSameDigits) {
                     // Case 1: When we have both original and reversed combinations
-                    String reversedResult = combo.substring(2) + "-" + combo.substring(0, 2);
+                    String reversedResult = combo.substring(2) + "*" + combo.substring(0, 2);
 
                     // Divide the bet amount by 2 for each combination
                     double halfBet = rambolValue / 2.0;
@@ -675,7 +655,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                     EntryItem rambolItem1 = new EntryItem(formattedResult, rambolValue, code, formattedPrize);
                     entryAdapter.addItem(rambolItem1);
                 }
-            }
+            }*/
         } else if (game.equals("3D")) {
             if (!hasMinimum3Digits(combo)) {
                 Dialog dialog = new Dialog(this);
@@ -697,65 +677,34 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 dialog.show();
                 return;
             }
-            if(WinthreeCombinations.contains(combo)) {
-                Toast.makeText(this, "Win3 Combination", Toast.LENGTH_SHORT).show();
-                double win3 = 450;
-                double prizeWin3 = stretBet * win3;
+            if (!stret.isEmpty()) {
+                double prize = prizeAmount3D;
+                double prizeWin = stretBet * prizeAmount3D;
+                String formattedPrize = decimalFormat.format(prizeWin);
+                code = "Standard";
+                EntryItem stretItem = new EntryItem(combo, stretBet, game, code, formattedPrize);
+                entryAdapter.addItem(stretItem);
+            }
 
-                String PrizeWin3 = decimalFormat.format(prizeWin3);
-                if (!stret.isEmpty()) {
-                    code = "Standard";
-                    EntryItem stretItem = new EntryItem(combo, stretBet, code, PrizeWin3);
-                    entryAdapter.addItem(stretItem);
+            if (!rambol.isEmpty()) {
+                double rambolValue = Double.parseDouble(rambol);
+                BigDecimal ramble;
+                double prize;
+
+                if (hasTwoDuplicateDigits(combo)) {
+                    ramble = new BigDecimal(rambolValue).divide(new BigDecimal("3.0"), 10, RoundingMode.HALF_UP); // Duplicate digits prize distribution
+                    prize = prizeAmount3D * ramble.doubleValue();
+                } else {
+                    ramble = new BigDecimal(rambolValue).divide(new BigDecimal("6.0"), 10, RoundingMode.HALF_UP); // No duplicate digits prize distribution
+                    prize = prizeAmount3D * ramble.doubleValue();
                 }
-
-                if (!rambol.isEmpty()) {
-                    double rambolValue = Double.parseDouble(rambol);
-                    BigDecimal ramble;
-                    double prize;
-
-                    if (hasTwoDuplicateDigits(combo)) {
-                        ramble = new BigDecimal(rambolValue).divide(new BigDecimal("3.0"), 10, RoundingMode.HALF_UP); // Increase precision
-                        prize = win3 * ramble.doubleValue();
-                    } else {
-                        ramble = new BigDecimal(rambolValue).divide(new BigDecimal("6.0"), 10, RoundingMode.HALF_UP); // Increase precision
-                        prize = win3 * ramble.doubleValue();
-                    }
-                    String prize3DString = decimalFormat.format(prize);
-                    String Code = "Rambolito 3";
-                    EntryItem rambolItem = new EntryItem(combo, rambolBet, Code, prize3DString);
-                    entryAdapter.addItem(rambolItem);
-                }
-            } else {
-                if (!stret.isEmpty()) {
-                    double prize = hasTwoDuplicateDigits(combo) ? 450 : 450;
-                    double prizeWin = stretBet * prize;
-                    String formattedPrize = decimalFormat.format(prizeWin);
-                    code = "Standard";
-                    EntryItem stretItem = new EntryItem(combo, stretBet, code, formattedPrize);
-                    entryAdapter.addItem(stretItem);
-                }
-
-                if (!rambol.isEmpty()) {
-                    double rambolValue = Double.parseDouble(rambol);
-                    BigDecimal ramble;
-                    double prize;
-
-                    if (hasTwoDuplicateDigits(combo)) {
-                        ramble = new BigDecimal(rambolValue).divide(new BigDecimal("3.0"), 10, RoundingMode.HALF_UP); // Duplicate digits prize distribution
-                        prize = 450 * ramble.doubleValue();
-                    } else {
-                        ramble = new BigDecimal(rambolValue).divide(new BigDecimal("6.0"), 10, RoundingMode.HALF_UP); // No duplicate digits prize distribution
-                        prize = 450 * ramble.doubleValue();
-                    }
-                    String formattedPrize = decimalFormat.format(prize);
-                    String Code = "Rambolito 3";
-                    EntryItem rambolItem = new EntryItem(combo, rambolBet, Code, formattedPrize);
-                    entryAdapter.addItem(rambolItem);
-                }
+                String formattedPrize = decimalFormat.format(prize);
+                code = "Rambolito 3";
+                EntryItem rambolItem = new EntryItem(combo, rambolBet, game, code, formattedPrize);
+                entryAdapter.addItem(rambolItem);
             }
         } else if (game.equals("2D")) {
-            if (!hasMinimum2Digits(combo)) {
+            if (!hasMinimum4Digits(combo)) {
                 Dialog dialog = new Dialog(this);
                 dialog.setContentView(R.layout.custom_errordialog);
                 dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -767,7 +716,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 TextView description = dialog.findViewById(R.id.dialogDescription);
 
                 title.setText("Invalid Input:");
-                description.setText("Please enter 2 digits for 2D combination");
+                description.setText("Please enter 4 digits for 2D combination");
 
                 positiveButton.setOnClickListener(buttonView -> {
                     dialog.dismiss();
@@ -775,9 +724,50 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 dialog.show();
                 return;
             }
-            String targetcombo = combo;
-            EntryItem stretItem = new EntryItem(targetcombo, stretBet, game, Prize2D);
-            entryAdapter.addItem(stretItem);
+
+            // Get current date parts
+            Calendar calendar = Calendar.getInstance();
+            int month = calendar.get(Calendar.MONTH) + 1; // Month is 0-based
+            int day = calendar.get(Calendar.DAY_OF_MONTH);
+
+            // Format date parts to 2-digit strings
+            String monthStr = String.format("%02d", month);
+            String dayStr = String.format("%02d", day);
+
+            // Extract first and last 2 digits from combo
+            String firstTwo = combo.substring(0, 2);
+            String lastTwo = combo.substring(2);
+
+            code = "Standard";
+
+            // Check if combo matches date pattern (either order) or has same digits
+            boolean isDateMatch = (firstTwo.equals(monthStr) && lastTwo.equals(dayStr)) ||
+                    (firstTwo.equals(dayStr) && lastTwo.equals(monthStr));
+            boolean isSameDigits = firstTwo.equals(lastTwo);
+
+            /*double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;*/ // Half prize if condition met
+
+            if (!stret.isEmpty()) {
+                String formattedResult = combo.substring(0, 2) + combo.substring(2);
+                double prize = stretBet * prizeAmount2D;
+                String formattedPrize = decimalFormat.format(prize);
+                EntryItem stretItem = new EntryItem(formattedResult, stretBet, game, code, formattedPrize);
+                entryAdapter.addItem(stretItem);
+            }
+
+            /*if (!rambol.isEmpty()) {
+                double prize = prizeMultiplier * rambolBet;
+                String formattedPrize = decimalFormat.format(prize);
+                String formattedResult = combo.substring(0, 2) + combo.substring(2);
+                String reversedResult = combo.substring(2) + combo.substring(0, 2);
+
+                // Add both results to the adapter
+                EntryItem rambolItem1 = new EntryItem(formattedResult, rambolBet, code, formattedPrize);
+                EntryItem rambolItem2 = new EntryItem(reversedResult, rambolBet, code, formattedPrize);
+
+                entryAdapter.addItem(rambolItem1);
+                entryAdapter.addItem(rambolItem2);
+            }*/
         } /*else if (game.equals("L23D")) {
             if (!hasMinimum2Digits(combo)) {
                 Dialog dialog = new Dialog(this);
@@ -1360,7 +1350,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
     private String createStyledTextSection(AsyncEscPosPrinter printer, String game, String combo, String amount) {
-        // Configure normal paint
+
         Paint normalPaint = new Paint();
         normalPaint.setAntiAlias(false);
         normalPaint.setSubpixelText(false);
@@ -1368,61 +1358,46 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         normalPaint.setDither(false);
         normalPaint.setStyle(Paint.Style.FILL_AND_STROKE);
         normalPaint.setColor(Color.BLACK);
-        normalPaint.setTextSize(18);
-        normalPaint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL));
+        normalPaint.setTextSize(20);
+        normalPaint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
 
-        // Configure combo paint (bold and larger)
         Paint comboPaint = new Paint(normalPaint);
         comboPaint.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         comboPaint.setTextSize(24);
 
-        // Format combo - add spacing between numbers
-        combo = combo.replace("*", " ");
+        combo = combo.replace("*", "");
 
-        // Add spacing between each character (e.g., "134" becomes "1 3 4")
         StringBuilder spacedCombo = new StringBuilder();
         for (int i = 0; i < combo.length(); i++) {
-            if (i > 0) {
-                spacedCombo.append("     "); // Three spaces between numbers
-            }
+            if (i > 0) spacedCombo.append("  ");
             spacedCombo.append(combo.charAt(i));
         }
         combo = spacedCombo.toString();
 
-        // Create formatted line
-        String formattedLine = String.format("%-25s%s", game, combo);
-        String[] parts = formattedLine.split("(?<=\\G.{10})", 2); // Split after 10 chars
-        String gamePart = parts[0];
-        // Calculate dimensions
         int totalWidth = 384;
         int lineHeight = (int) (comboPaint.getTextSize() + 5);
         int totalHeight = 2 * lineHeight;
 
-        int topMargin = 10;
-
-        // Create bitmap
         Bitmap bitmap = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         canvas.drawColor(Color.WHITE);
 
-        // Draw first line
+        int topMargin = 10;
         float y = -normalPaint.ascent() + topMargin;
 
-        // Draw game part (normal)
-        canvas.drawText(gamePart, 0, y, normalPaint);gamePart = parts[0];
-        String comboPart = parts.length > 1 ? parts[1] : "";
+        // Draw left game text
+        canvas.drawText(game, 0, y, normalPaint);
 
-        // Draw combo part (bold and larger)
-        canvas.drawText(comboPart, normalPaint.measureText(gamePart),
-                y - (comboPaint.getTextSize() - normalPaint.getTextSize())/2,
-                comboPaint);
+        // RIGHT-ALIGN the combo
+        float comboWidth = comboPaint.measureText(combo);
+        float comboX = totalWidth - comboWidth - 10; // 10px padding from the right
+        canvas.drawText(combo, comboX, y, comboPaint);
 
-        // Draw second line (price)
+        // Draw price on next line (still right aligned)
         String priceText = "Price: ₱" + amount;
         float priceX = totalWidth - normalPaint.measureText(priceText) - 10;
         canvas.drawText(priceText, priceX, y + lineHeight, normalPaint);
 
-        // Convert to printer format
         String result = PrinterTextParserImg.bitmapToHexadecimalString(printer, bitmap);
         bitmap.recycle();
         return result;
@@ -1911,7 +1886,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             if (combo.length() > 4) {
                 combo = combo.substring(0, 3) + " " + combo.substring(3);
             }
-            String styledEntry = createStyledTextSection(printer,item.getGame(),combo,formattedAmount);
+            String styledEntry = createStyledTextSection(printer,item.getType(),combo,formattedAmount);
 
             comborcptBuilder.append("[L]<img>")
                     .append(styledEntry)
@@ -1946,7 +1921,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         String version = AppVersion.VERSION_NAME;
         String group = Account.getInstance(this).getGroup();
         PreparedStatement preparedStatement = null;
-        String insertSQL = "INSERT INTO EntryTB (combo, bets, prize, transcode, draw, game, agent, date, version, [group]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String insertSQL = "INSERT INTO EntryTB (combo, bets, prize, transcode, type, draw, game, agent, date, version, [group], qrcode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try {
             ConSQL c = new ConSQL();
@@ -1960,13 +1935,13 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
                 for (EntryItem item : itemList) {
                     String combo = item.getCombo();
-                    String game = item.getGame();
+                    String game = item.getType();
                     BigDecimal totalAmount = BigDecimal.valueOf(item.getAmount());
                     BigDecimal shareAmount = totalAmount;
                     BigDecimal prize = new BigDecimal(item.getPrize().replace(",", ""));
 
                     // Check if combo ends with "R"
-                    if (item.getGame().endsWith("R")) {
+                    if (item.getType().startsWith("R")) {
                         // Generate permutations
                         List<String> permutations = PermutationUtil.getPermutations(combo);
                         int numPermutations = permutations.size();
@@ -1978,27 +1953,31 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                             preparedStatement.setBigDecimal(2, shareAmount);
                             preparedStatement.setBigDecimal(3, prize); // Assuming prize is not used here
                             preparedStatement.setString(4, transCode2);
-                            preparedStatement.setString(5, drawTime);
-                            preparedStatement.setString(6, game);
-                            preparedStatement.setString(7, Name);
-                            preparedStatement.setString(8, getCurrentDateTime());
-                            preparedStatement.setString(9, version);
-                            preparedStatement.setString(10, group);
+                            preparedStatement.setString(5, game);
+                            preparedStatement.setString(6, drawTime);
+                            preparedStatement.setString(7, gameName);
+                            preparedStatement.setString(8, Name);
+                            preparedStatement.setString(9, getCurrentDateTime());
+                            preparedStatement.setString(10, version);
+                            preparedStatement.setString(11, group);
+                            preparedStatement.setString(12, transCode3);
 
                             preparedStatement.addBatch();
                             totalRows++;
                         }
                     } else {
                         preparedStatement.setString(1, combo);
-                        preparedStatement.setBigDecimal(2, totalAmount);
+                        preparedStatement.setBigDecimal(2, shareAmount);
                         preparedStatement.setBigDecimal(3, prize); // Assuming prize is not used here
                         preparedStatement.setString(4, transCode2);
-                        preparedStatement.setString(5, drawTime);
-                        preparedStatement.setString(6, game);
-                        preparedStatement.setString(7, Name);
-                        preparedStatement.setString(8, getCurrentDateTime());
-                        preparedStatement.setString(9, version);
-                        preparedStatement.setString(10, group);
+                        preparedStatement.setString(5, game);
+                        preparedStatement.setString(6, drawTime);
+                        preparedStatement.setString(7, gameName);
+                        preparedStatement.setString(8, Name);
+                        preparedStatement.setString(9, getCurrentDateTime());
+                        preparedStatement.setString(10, version);
+                        preparedStatement.setString(11, group);
+                        preparedStatement.setString(12, transCode3);
 
                         preparedStatement.addBatch();
                         totalRows++;
@@ -2010,11 +1989,15 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
                 if (successfulInserts == totalRows) {
                     connection.commit();
+/*
                     Toast.makeText(this, " combination(s) saved successfully", Toast.LENGTH_SHORT).show();
+*/
                     return true;
                 } else {
                     connection.rollback();
+/*
                     Toast.makeText(this, "Failed to save some combination(s)", Toast.LENGTH_SHORT).show();
+*/
                     return false;
                 }
             }

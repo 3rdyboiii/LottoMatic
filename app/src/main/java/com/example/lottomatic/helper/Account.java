@@ -16,6 +16,10 @@ public class Account {
     private String code;
     private String group;
     private double gross;
+    private double prize4D;
+    private double prize3D;
+    private double prize2D;
+
 
     private static final String PREFS_NAME = "account_prefs";
     private static final String KEY_USERNAME = "username";
@@ -24,6 +28,9 @@ public class Account {
     private static final String KEY_CODE = "code";
     private static final String KEY_GROUP = "group";
     private static final String KEY_GROSS = "gross";
+    private static final String KEY_PRIZE4D = "prize4D";
+    private static final String KEY_PRIZE3D = "prize3D";
+    private static final String KEY_PRIZE2D = "prize2D";
     private static final String KEY_LIMITS = "bet_limits";
     private static final String KEY_LIMITS_TIMESTAMP = "limits_timestamp";
 
@@ -37,6 +44,9 @@ public class Account {
         code = sharedPreferences.getString(KEY_CODE, null);
         group = sharedPreferences.getString(KEY_GROUP, null);
         gross = sharedPreferences.getFloat(KEY_GROSS, 0.0f); // Load gross from SharedPreferences
+        prize4D = sharedPreferences.getFloat(KEY_PRIZE4D, 0.0f);
+        prize3D = sharedPreferences.getFloat(KEY_PRIZE3D, 0.0f);
+        prize2D = sharedPreferences.getFloat(KEY_PRIZE2D, 0.0f);
     }
 
     public static synchronized Account getInstance(Context context) {
@@ -68,6 +78,18 @@ public class Account {
 
     public double getGross() {
         return gross;
+    }
+
+    public double getPrize4D() {
+        return prize4D;
+    }
+
+    public double getPrize3D() {
+        return prize3D;
+    }
+
+    public double getPrize2D() {
+        return prize2D;
     }
 
     public void setBetLimits(Map<String, Double> limits) {
@@ -146,4 +168,26 @@ public class Account {
         editor.putFloat(KEY_GROSS, (float) this.gross);
         editor.apply();
     }
+
+    public void setPrize4D(double prize4D) {
+        this.prize4D = prize4D;
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putFloat(KEY_PRIZE4D, (float) prize4D);
+        editor.apply();
+    }
+
+    public void setPrize3D(double prize3D) {
+        this.prize3D = prize3D;
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putFloat(KEY_PRIZE3D, (float) prize3D);
+        editor.apply();
+    }
+
+    public void setPrize2D(double prize2D) {
+        this.prize2D = prize2D;
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putFloat(KEY_PRIZE2D, (float) prize2D);
+        editor.apply();
+    }
+
 }

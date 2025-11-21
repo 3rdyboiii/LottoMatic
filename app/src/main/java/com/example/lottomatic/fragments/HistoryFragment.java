@@ -183,14 +183,10 @@ public class HistoryFragment extends Fragment {
     }
 
     private void fetchHistory(String date) {
-        if (!isFragmentActive) {
-            return;
-        }
+        if (!isFragmentActive) return;
 
         final Context context = getContext();
-        if (context == null) {
-            return;
-        }
+        if (context == null) return;
 
         showProgress(true);
 
@@ -198,17 +194,17 @@ public class HistoryFragment extends Fragment {
         final String targetDate = date;
 
         executor.execute(() -> {
-            if (!isFragmentActive) {
-                return;
-            }
+            if (!isFragmentActive) return;
 
             ConSQL c = new ConSQL();
             try (Connection connection = c.conclass()) {
                 if (connection != null && isFragmentActive) {
-                    String query = "SELECT combo, bets, prize, transcode, game, draw, date, result FROM EntryTB WHERE agent = ? AND CAST([date] AS DATE) = ? ORDER BY date DESC";
+                    String query = "SELECT combo, bets, prize, transcode, game, draw, date, result, claimed FROM EntryTB " +
+                            "WHERE agent = ? AND CAST([date] AS DATE) = ? ORDER BY date DESC";
                     try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
                         preparedStatement.setString(1, agentName);
                         preparedStatement.setString(2, targetDate);
+
                         try (ResultSet resultSet = preparedStatement.executeQuery()) {
                             List<HistoryItem> tempList = new ArrayList<>();
 
@@ -221,30 +217,36 @@ public class HistoryFragment extends Fragment {
                                 String draw = resultSet.getString("draw");
                                 String dateStr = resultSet.getString("date");
                                 String result = resultSet.getString("result");
+                                String claimed = resultSet.getString("claimed");
+
+                                boolean isWinner = combo.equals(result);
+                                boolean isClaimed = "yes".equalsIgnoreCase(claimed);
 
                                 DecimalFormat decimalFormat = new DecimalFormat("#,##0.00");
                                 String formattedBets = "₱" + decimalFormat.format(bets);
                                 String formattedPrize = "₱" + decimalFormat.format(prize);
 
-                                HistoryItem item = new HistoryItem(combo, formattedBets, draw, game, transcode, dateStr, formattedPrize, result);
+                                HistoryItem item = new HistoryItem(combo, formattedBets, draw, game, transcode,
+                                        dateStr, formattedPrize, result,
+                                        isWinner, isClaimed);
                                 tempList.add(item);
                             }
 
                             if (isFragmentActive && getActivity() != null) {
                                 getActivity().runOnUiThread(() -> {
-                                    if (isFragmentActive) {
-                                        itemList.clear();
-                                        itemList.addAll(tempList);
-                                        filteredList.clear();
-                                        filteredList.addAll(tempList);
-                                        adapter.notifyDataSetChanged();
-                                        showProgress(false);
+                                    if (!isFragmentActive) return;
 
-                                        if (tempList.isEmpty()) {
-                                            Toast.makeText(getContext(), "No records found for " + getFormattedDisplayDate(targetDate), Toast.LENGTH_SHORT).show();
-                                        } else {
-                                            Toast.makeText(getContext(), "Found " + tempList.size() + " records", Toast.LENGTH_SHORT).show();
-                                        }
+                                    itemList.clear();
+                                    itemList.addAll(tempList);
+                                    filteredList.clear();
+                                    filteredList.addAll(tempList);
+                                    adapter.notifyDataSetChanged();
+                                    showProgress(false);
+
+                                    if (tempList.isEmpty()) {
+                                        Toast.makeText(getContext(), "No records found for " + getFormattedDisplayDate(targetDate), Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        Toast.makeText(getContext(), "Found " + tempList.size() + " records", Toast.LENGTH_SHORT).show();
                                     }
                                 });
                             }
@@ -264,6 +266,7 @@ public class HistoryFragment extends Fragment {
             }
         });
     }
+
 
     private String getFormattedDisplayDate(String dateString) {
         try {
