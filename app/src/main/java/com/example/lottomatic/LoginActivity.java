@@ -1,13 +1,18 @@
 package com.example.lottomatic;
 
 import android.app.Dialog;
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -19,6 +24,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
 import androidx.core.splashscreen.SplashScreen;
 
 import com.example.lottomatic.helper.Account;
@@ -27,7 +33,15 @@ import com.example.lottomatic.helper.ConSQL;
 import com.example.lottomatic.helper.FakeActivity;
 import com.example.lottomatic.utility.NetworkChangeListener;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -57,6 +71,12 @@ public class LoginActivity extends AppCompatActivity {
         super.onStart();
         IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
         registerReceiver(networkChangeListener, filter);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        checkForUpdate();
     }
 
     @Override
@@ -209,6 +229,131 @@ public class LoginActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    private void checkForUpdate() {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> {
+            try {
+                URL url = new URL("https://raw.githubusercontent.com/3rdyboiii/LottoMatic/master/latest_version.json");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.connect();
+
+                InputStream inputStream = connection.getInputStream();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject json = new JSONObject(sb.toString());
+                int latestVersionCode = json.getInt("versionCode");
+                String apkUrl = json.getString("apkUrl");
+
+                if (latestVersionCode > BuildConfig.VERSION_CODE) {
+                    runOnUiThread(() -> promptUpdate(apkUrl));
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private void promptUpdate(String apkUrl) {
+        new AlertDialog.Builder(this)
+                .setTitle("Update Required")
+                .setMessage("A new version is available. You must update to continue.")
+                .setCancelable(false) // can't dismiss
+                .setPositiveButton("Update Now", (dialog, which) -> downloadAndInstallApk(apkUrl))
+                .show();
+    }
+
+    private void downloadAndInstallApk(String apkUrl) {
+        File apkFile = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "app-release.apk");
+
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(apkUrl));
+        request.setTitle("Downloading Update");
+        request.setDescription("Please wait...");
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
+
+// Use this instead of FileProvider
+        request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, "app-release.apk");
+
+
+        DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        long downloadId = manager.enqueue(request);
+
+        AlertDialog progressDialog = new AlertDialog.Builder(this)
+                .setTitle("Downloading Update")
+                .setMessage("0%")
+                .setCancelable(false)
+                .show();
+
+        // Poll download progress
+        new Thread(() -> {
+            boolean downloading = true;
+            DownloadManager.Query query = new DownloadManager.Query();
+            query.setFilterById(downloadId);
+
+            while (downloading) {
+                Cursor cursor = manager.query(query);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
+                    int bytesDownloaded = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+                    int bytesTotal = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+
+                    if (bytesTotal > 0) {
+                        final int progress = (int) ((bytesDownloaded * 100L) / bytesTotal);
+                        runOnUiThread(() -> progressDialog.setMessage(progress + "%"));
+                    }
+
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        downloading = false;
+                        runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            installApk(apkFile);
+                        });
+                    } else if (status == DownloadManager.STATUS_FAILED) {
+                        downloading = false;
+                        runOnUiThread(() -> {
+                            progressDialog.dismiss();
+                            new AlertDialog.Builder(this)
+                                    .setTitle("Download Failed")
+                                    .setMessage("Please try again later.")
+                                    .setPositiveButton("OK", null)
+                                    .show();
+                        });
+                    }
+                    cursor.close();
+                }
+
+                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            }
+        }).start();
+    }
+
+    private void installApk(File apkFile) {
+        Uri apkUri;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            apkUri = FileProvider.getUriForFile(this, BuildConfig.APPLICATION_ID + ".provider", apkFile);
+        } else {
+            apkUri = Uri.fromFile(apkFile);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!getPackageManager().canRequestPackageInstalls()) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+                return;
+            }
+        }
+
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(intent);
     }
 
     private void showProgress(boolean show) {

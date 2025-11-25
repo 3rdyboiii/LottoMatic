@@ -49,7 +49,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
 
         // Text fields
         holder.drawText.setText(item.getDraw() + " DRAW");
-        holder.typeValue.setText(item.getGame());
+        holder.typeValue.setText(item.getType());
         holder.comboValue.setText(item.getCombo());
         holder.resultValue.setText(item.getResult() != null && !item.getResult().isEmpty()
                 ? item.getResult()

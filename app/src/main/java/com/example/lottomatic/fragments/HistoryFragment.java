@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.example.lottomatic.R;
@@ -56,6 +57,19 @@ public class HistoryFragment extends Fragment {
         searchView = v.findViewById(R.id.searchView);
         calendar = v.findViewById(R.id.calendarBtn);
         progressBar = v.findViewById(R.id.progressBar);
+
+        RadioGroup filterGroup = v.findViewById(R.id.filterGroup);
+
+        filterGroup.check(R.id.button1);
+
+// Listen for changes
+        filterGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == R.id.button1) {
+                applyFilter("all");
+            } else if (checkedId == R.id.button2) {
+                applyFilter("win");
+            }
+        });
 
         // Initialize with current date
         selectedDate = getCurrentDate();
@@ -110,6 +124,29 @@ public class HistoryFragment extends Fragment {
             executor.shutdownNow();
         }
     }
+
+    private void applyFilter(String filterType) {
+        filteredList.clear();
+
+        List<HistoryItem> temp = new ArrayList<>(itemList);
+
+        // Filter only winners if needed
+        if ("win".equals(filterType)) {
+            temp.removeIf(item -> !item.isWinner());
+        }
+
+        // Sort winners first (even within filtered)
+        /*temp.sort((o1, o2) -> {
+            if (o1.isWinner() && !o2.isWinner()) return -1;
+            if (!o1.isWinner() && o2.isWinner()) return 1;
+            // Otherwise by date descending
+            return o2.getDate().compareTo(o1.getDate());
+        });*/
+
+        filteredList.addAll(temp);
+        adapter.notifyDataSetChanged();
+    }
+
 
     private String getCurrentDate() {
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
@@ -199,8 +236,7 @@ public class HistoryFragment extends Fragment {
             ConSQL c = new ConSQL();
             try (Connection connection = c.conclass()) {
                 if (connection != null && isFragmentActive) {
-                    String query = "SELECT combo, bets, prize, transcode, game, draw, date, result, claimed FROM EntryTB " +
-                            "WHERE agent = ? AND CAST([date] AS DATE) = ? ORDER BY date DESC";
+                    String query = "SELECT combo, bets, prize, transcode, game, type, draw, date, result, claimed FROM EntryTB WHERE agent = ? AND CAST([date] AS DATE) = ? ORDER BY date DESC";
                     try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
                         preparedStatement.setString(1, agentName);
                         preparedStatement.setString(2, targetDate);
@@ -214,6 +250,7 @@ public class HistoryFragment extends Fragment {
                                 double prize = resultSet.getDouble("prize");
                                 String transcode = resultSet.getString("transcode");
                                 String game = resultSet.getString("game");
+                                String type = resultSet.getString("type");
                                 String draw = resultSet.getString("draw");
                                 String dateStr = resultSet.getString("date");
                                 String result = resultSet.getString("result");
@@ -226,7 +263,7 @@ public class HistoryFragment extends Fragment {
                                 String formattedBets = "₱" + decimalFormat.format(bets);
                                 String formattedPrize = "₱" + decimalFormat.format(prize);
 
-                                HistoryItem item = new HistoryItem(combo, formattedBets, draw, game, transcode,
+                                HistoryItem item = new HistoryItem(combo, formattedBets, draw, game, type, transcode,
                                         dateStr, formattedPrize, result,
                                         isWinner, isClaimed);
                                 tempList.add(item);
@@ -238,18 +275,24 @@ public class HistoryFragment extends Fragment {
 
                                     itemList.clear();
                                     itemList.addAll(tempList);
-                                    filteredList.clear();
-                                    filteredList.addAll(tempList);
-                                    adapter.notifyDataSetChanged();
+
+                                    // Apply filter based on current RadioButton
+                                    RadioGroup filterGroup = getView().findViewById(R.id.filterGroup);
+                                    int checkedId = filterGroup.getCheckedRadioButtonId();
+                                    if (checkedId == R.id.button2) {
+                                        applyFilter("win");
+                                    } else {
+                                        applyFilter("all");
+                                    }
+
                                     showProgress(false);
 
                                     if (tempList.isEmpty()) {
                                         Toast.makeText(getContext(), "No records found for " + getFormattedDisplayDate(targetDate), Toast.LENGTH_SHORT).show();
-                                    } else {
-                                        Toast.makeText(getContext(), "Found " + tempList.size() + " records", Toast.LENGTH_SHORT).show();
                                     }
                                 });
                             }
+
                         }
                     }
                 }

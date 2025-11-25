@@ -21,7 +21,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
 import android.text.InputFilter;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,6 +31,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -47,6 +50,7 @@ import com.example.lottomatic.connection.DeviceConnection;
 import com.example.lottomatic.connection.bluetooth.BluetoothConnection;
 import com.example.lottomatic.helper.Account;
 import com.example.lottomatic.helper.AppVersion;
+import com.example.lottomatic.helper.RangeFormatInputFilter;
 import com.example.lottomatic.helper.TextInputFilter;
 import com.example.lottomatic.textparser.PrinterTextParserImg;
 import com.example.lottomatic.items.EntryItem;
@@ -74,6 +78,7 @@ import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
@@ -90,8 +95,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnTotalUpdateListener {
-    private TextView totalTxt, displaytxt, winthreetxt, titleTxt, maxBetTxt, drawTxt;
-    private EditText comboInput, stretInput, rambolInput;
+    private TextView progressText, totalTxt, displaytxt, winthreetxt, titleTxt, maxBetTxt, drawTxt;
+    private TextInputLayout combo2layout;
+    private EditText comboInput, combo2Input, stretInput, rambolInput;
     private Button addBtn, clearBtn, printBtn;
     private String draw = "", Name = "", Code = "", comborcpt = "", betrcpt = "", totalrcpt = "", username = "", transCode = "",
             transCode2 = "", transCode3 = "", combo = "", bet = "", activityType = "", selectedGame = "", drawTime = "", gameDraw, gameName;
@@ -100,7 +106,8 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
     private double windouble = 450;
 
     private int gameImage;
-
+    private ProgressBar progressBar;
+    private View loadingContainer;
     private Date currentDate;
     private BluetoothConnection selectedDevice;
 
@@ -152,7 +159,9 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         totalTxt = findViewById(R.id.totalTxt);
         gameimage = findViewById(R.id.gameimage);
         drawTxt = findViewById(R.id.drawTxt);
-        comboInput = findViewById(R.id.comboInput);
+        comboInput = findViewById(R.id.combo1Input);
+        combo2Input = findViewById(R.id.combo2Input);
+        combo2layout = findViewById(R.id.combo2layout);
         stretInput = findViewById(R.id.stretInput);
         rambolInput = findViewById(R.id.rambolInput);
         rambolInputLayout = findViewById(R.id.rambolInputLayout);
@@ -160,6 +169,9 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         addBtn.setOnClickListener(v -> addCombination());
         printBtn = findViewById(R.id.printBtn);
         printBtn.setOnClickListener(v -> { printOrNoPrint();});
+        progressBar = findViewById(R.id.progressBar);
+        loadingContainer = findViewById(R.id.loadingContainer);
+        progressText = findViewById(R.id.progressText);
 
         InputFilter[] filters = {new TextInputFilter()};
 
@@ -231,14 +243,46 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         } else if (gameImage == R.drawable.icon_6d) {
             drawTxt.setText("6D DRAW");
         } else if (gameImage == R.drawable.icon_2d) {
-            int maxLength = 4;
-            comboInput.setFilters(new InputFilter[] { new InputFilter.LengthFilter(maxLength) });
-            rambolInputLayout.setVisibility(View.GONE);
+            int maxLength = 2;
+
+            InputFilter lengthFilter = new InputFilter.LengthFilter(maxLength);
+            InputFilter rangeFilter = new RangeFormatInputFilter(1, 31);
+
+            comboInput.setOnFocusChangeListener((v, hasFocus) -> {
+                if (!hasFocus) {
+                    autoPad2D(comboInput);
+                }
+            });
+
+            combo2Input.setOnFocusChangeListener((v, hasFocus) -> {
+                if (!hasFocus) {
+                    autoPad2D(combo2Input);
+                }
+            });
+
+            comboInput.setFilters(new InputFilter[] { lengthFilter, rangeFilter });
+            combo2Input.setFilters(new InputFilter[] { lengthFilter, rangeFilter });
+
+            combo2layout.setVisibility(View.VISIBLE);
+            rambolInputLayout.setVisibility(View.VISIBLE);
         } else {
             drawTxt.setText("DRAW");
         }
         startCheckingTime();
     }
+
+    private void autoPad2D(EditText editText) {
+        String txt = editText.getText().toString().trim();
+        if (txt.isEmpty()) return;
+
+        try {
+            int num = Integer.parseInt(txt);
+            if (num >= 1 && num <= 31) {
+                editText.setText(String.format("%02d", num));
+            }
+        } catch (Exception ignored) {}
+    }
+
 
     private void showBackConfirmationDialog() {
         if (entryAdapter.getItemCount() != 0) {
@@ -280,7 +324,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
     }
     private boolean hasMinimum2Digits(String input) {
         String digitsOnly = input.replaceAll("\\D", "");
-        return digitsOnly.length() >= 4;
+        return digitsOnly.length() >= 2;
     }
     @Override
     public void onTotalUpdate(double total) {
@@ -335,47 +379,92 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         });
         dialog.show();
     }
-    private String getCurrentTotalBet(List<String> combos, double amount, String game) {
-        String limitExceededCombo = null;
-        Account account = Account.getInstance(this);
-        try (Connection connection = new ConSQL().conclass()) {
-            if (connection != null) {
-                for (String combo : combos) {
-                    String query = "SELECT SUM(bets) AS totalBet FROM EntryTB WHERE combo = ? and draw = ? and game = ? and CAST([date] AS date) = ?";
-                    try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
-                        preparedStatement.setString(1, combo);
-                        preparedStatement.setString(2, drawTime);
-                        preparedStatement.setString(3, game);
-                        preparedStatement.setString(4, getCurrentDateTime());
-                        try (ResultSet resultSet = preparedStatement.executeQuery()) {
-                            if (resultSet.next()) {
-                                double totalBet = resultSet.getDouble("totalBet");
-                                if (game.equals("4D")) {
-                                    if (amount + totalBet > account.getBetLimit(game, 50.0)) {
-                                        limitExceededCombo = combo;
-                                        return limitExceededCombo;
-                                    }
-                                } else if (game.equals("3D")) {
-                                    if (amount + totalBet > account.getBetLimit(game, 200.0)) {
-                                        limitExceededCombo = combo;
-                                        return limitExceededCombo;
-                                    }
-                                } else if ("2D".equals(game)) {
-                                    if (amount + totalBet > account.getBetLimit(game, 200.0)) {
-                                        limitExceededCombo = combo;
-                                        return limitExceededCombo;
+
+    public interface BetLimitCallback {
+        void onResult(String exceededCombo);
+    }
+
+    private void getCurrentTotalBet(List<String> combos, double amount, String game, BetLimitCallback callback) {
+
+        runOnUiThread(() -> {
+            loadingContainer.setVisibility(View.VISIBLE);
+            progressBar.setProgress(0);
+            progressText.setText("Checking...");
+        });
+
+        comboInput.setText("");
+        combo2Input.setText("");
+        stretInput.setText("");
+        rambolInput.setText("");
+
+        clearFocusAndHideKeyboard();
+
+        executor.execute(() -> {
+
+            String exceededCombo = null;
+            Account account = Account.getInstance(this);
+
+            int total = combos.size();
+            int index = 0;
+
+            try (Connection connection = new ConSQL().conclass()) {
+                if (connection != null) {
+
+                    for (String combo : combos) {
+
+                        // compute progress percentage
+                        int finalIndex = index;
+                        runOnUiThread(() -> {
+                            int percent = (int) (((double) finalIndex / total) * 100);
+                            progressBar.setProgress(percent);
+                            progressText.setText(percent + "%");
+                        });
+
+                        index++;
+
+                        String query =
+                                "SELECT SUM(bets) AS totalBet " +
+                                        "FROM EntryTB " +
+                                        "WHERE combo = ? AND draw = ? AND game = ? AND CAST([date] AS DATE) = CAST(GETDATE() AS DATE)";
+
+                        try (PreparedStatement ps = connection.prepareStatement(query)) {
+                            ps.setString(1, combo);
+                            ps.setString(2, drawTime);
+                            ps.setString(3, game);
+
+                            try (ResultSet rs = ps.executeQuery()) {
+                                if (rs.next()) {
+
+                                    double totalBet = rs.getDouble("totalBet");
+                                    double betLimit = account.getBetLimit(
+                                            game,
+                                            game.equals("4D") ? 50.0 : 200.0
+                                    );
+
+                                    if ((totalBet + amount) > betLimit) {
+                                        exceededCombo = combo;
+                                        break;
                                     }
                                 }
                             }
                         }
                     }
                 }
+            } catch (SQLException e) {
+                e.printStackTrace();
             }
-        } catch (SQLException e) {
-            runOnUiThread(() -> Log.e("Error:", e.getMessage()));
-        }
-        return limitExceededCombo;
+
+            String finalExceeded = exceededCombo;
+
+            runOnUiThread(() -> {
+                progressBar.setProgress(100);
+                progressText.setText("Done");
+                loadingContainer.setVisibility(View.GONE);
+                callback.onResult(finalExceeded);
+            });
+        });
     }
+
     private Set<String> SoldoutCombinations = new HashSet<>();
     private void fetchSoldout() {
         executor.execute(() -> {
@@ -442,9 +531,16 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
         }
     }*/
 
+    private String format2D(String val) {
+        if (val == null || val.isEmpty()) return "";
+        if (val.length() == 1) return "0" + val;
+        return val; // already 2 digits
+    }
+
     private void addCombination() {
         Account account = Account.getInstance(this);
-        String combo = comboInput.getText().toString();
+        String combo = comboInput.getText().toString().trim();
+        String combo2 = combo2Input.getText().toString().trim();
         String stret = stretInput.getText().toString();
         String rambol = rambolInput.getText().toString();
         double stretBet = stret.isEmpty() ? 0.0 : Double.parseDouble(stret);
@@ -474,20 +570,29 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
 
         String game = gameName;
 
+        // Build list of combos (including permutations if Rambol)
         List<String> rcomboList = new ArrayList<>();
         if (!rambol.isEmpty()) {
-            List<String> permutations = PermutationUtil.getPermutations(combo);
-            rcomboList.addAll(permutations);
+            if (gameName.equals("2D")) {
+                String original = combo + combo2;
+                String reversed = combo2 + combo;
+
+                List<String> permutations = Arrays.asList(original, reversed);
+                rcomboList.addAll(permutations);
+            } else {
+                rcomboList.addAll(PermutationUtil.getPermutations(combo));
+            }
         } else {
             rcomboList.add(combo);
         }
 
-        String limitExceededCombo = getCurrentTotalBet(rcomboList, amount, game);
+        // 🚀 USE THE CALLBACK VERSION (with progress bar)
+        getCurrentTotalBet(rcomboList, amount, game, exceededCombo -> {
 
-        if (limitExceededCombo != null) {
-            showErrorMessage(limitExceededCombo);
-            return;
-        }
+            if (exceededCombo != null) {
+                showErrorMessage(exceededCombo);
+                return;
+            }
 
         fetchSoldout();
 
@@ -595,7 +700,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 return;
             }
 
-            // Get current date parts
+            /*// Get current date parts
             Calendar calendar = Calendar.getInstance();
             int month = calendar.get(Calendar.MONTH) + 1; // Month is 0-based
             int day = calendar.get(Calendar.DAY_OF_MONTH);
@@ -612,7 +717,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             boolean isDateMatch = (firstTwo.equals(monthStr) && lastTwo.equals(dayStr));
             boolean isSameDigits = firstTwo.equals(lastTwo);
 
-            /*double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;*/
+            *//*double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;*/
 
             if (!stret.isEmpty()) {
                 String formattedResult = combo.substring(0, 2) + combo.substring(2);
@@ -704,7 +809,7 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                 entryAdapter.addItem(rambolItem);
             }
         } else if (game.equals("2D")) {
-            if (!hasMinimum4Digits(combo)) {
+            if (!hasMinimum2Digits(combo)) {
                 Dialog dialog = new Dialog(this);
                 dialog.setContentView(R.layout.custom_errordialog);
                 dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -748,26 +853,31 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             /*double prizeMultiplier = (isDateMatch || isSameDigits) ? 225 : 450;*/ // Half prize if condition met
 
             if (!stret.isEmpty()) {
-                String formattedResult = combo.substring(0, 2) + combo.substring(2);
+                String formattedResult = combo + combo2;
                 double prize = stretBet * prizeAmount2D;
                 String formattedPrize = decimalFormat.format(prize);
                 EntryItem stretItem = new EntryItem(formattedResult, stretBet, game, code, formattedPrize);
                 entryAdapter.addItem(stretItem);
             }
 
-            /*if (!rambol.isEmpty()) {
-                double prize = prizeMultiplier * rambolBet;
+            if (!rambol.isEmpty()) {
+                double rambolValue = Double.parseDouble(rambol);
+                BigDecimal ramble;
+                double prize;
+                code = "Rambolito";
+                /*ramble = new BigDecimal(rambolValue).divide(new BigDecimal("2.0"), 10, RoundingMode.HALF_UP);*/
+                prize = prizeAmount2D * rambolBet;
                 String formattedPrize = decimalFormat.format(prize);
-                String formattedResult = combo.substring(0, 2) + combo.substring(2);
-                String reversedResult = combo.substring(2) + combo.substring(0, 2);
+                String formattedResult = combo + combo2;
+                /*String reversedResult = combo.substring(2) + combo.substring(0, 2);*/
 
                 // Add both results to the adapter
-                EntryItem rambolItem1 = new EntryItem(formattedResult, rambolBet, code, formattedPrize);
-                EntryItem rambolItem2 = new EntryItem(reversedResult, rambolBet, code, formattedPrize);
+                EntryItem rambolItem1 = new EntryItem(formattedResult, rambolBet, game, code, formattedPrize);
+                /*EntryItem rambolItem2 = new EntryItem(reversedResult, rambolBet, game, code, formattedPrize);*/
 
                 entryAdapter.addItem(rambolItem1);
-                entryAdapter.addItem(rambolItem2);
-            }*/
+                /*entryAdapter.addItem(rambolItem2);*/
+            }
         } /*else if (game.equals("L23D")) {
             if (!hasMinimum2Digits(combo)) {
                 Dialog dialog = new Dialog(this);
@@ -841,12 +951,9 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
             EntryItem stretItem = new EntryItem(targetcombo, stretBet, game, Prize2D);
             entryAdapter.addItem(stretItem);
         }*/
-        comboInput.setText("");
-        stretInput.setText("");
-        rambolInput.setText("");
-
-        clearFocusAndHideKeyboard();
+        });
     }
+
     private void clearFocusAndHideKeyboard() {
         // Get the current view with focus
         View currentFocus = this.getCurrentFocus();
@@ -1943,27 +2050,57 @@ public class EntryActivity extends AppCompatActivity implements EntryAdapter.OnT
                     // Check if combo ends with "R"
                     if (item.getType().startsWith("R")) {
                         // Generate permutations
-                        List<String> permutations = PermutationUtil.getPermutations(combo);
-                        int numPermutations = permutations.size();
-                        shareAmount = totalAmount.divide(BigDecimal.valueOf(numPermutations), BigDecimal.ROUND_HALF_UP);
+                        if (gameName.equals("2D")) {
+                            // 2-digit Rambolito only creates 2 permutations
 
-                        for (String perm : permutations) {
-                            // Prepare entry for each permutation
-                            preparedStatement.setString(1, perm);
-                            preparedStatement.setBigDecimal(2, shareAmount);
-                            preparedStatement.setBigDecimal(3, prize); // Assuming prize is not used here
-                            preparedStatement.setString(4, transCode2);
-                            preparedStatement.setString(5, game);
-                            preparedStatement.setString(6, drawTime);
-                            preparedStatement.setString(7, gameName);
-                            preparedStatement.setString(8, Name);
-                            preparedStatement.setString(9, getCurrentDateTime());
-                            preparedStatement.setString(10, version);
-                            preparedStatement.setString(11, group);
-                            preparedStatement.setString(12, transCode3);
+                            String original = combo.substring(0, 2) + combo.substring(2);
+                            String reversed = combo.substring(2) + combo.substring(0, 2);
 
-                            preparedStatement.addBatch();
-                            totalRows++;
+                            List<String> permutations = Arrays.asList(original, reversed);
+
+                            int numPermutations = 2;
+                            shareAmount = totalAmount.divide(BigDecimal.valueOf(numPermutations), RoundingMode.HALF_UP);
+
+                            for (String perm : permutations) {
+                                preparedStatement.setString(1, perm);
+                                preparedStatement.setBigDecimal(2, shareAmount);
+                                preparedStatement.setBigDecimal(3, prize);
+                                preparedStatement.setString(4, transCode2);
+                                preparedStatement.setString(5, game);
+                                preparedStatement.setString(6, drawTime);
+                                preparedStatement.setString(7, gameName);
+                                preparedStatement.setString(8, Name);
+                                preparedStatement.setString(9, getCurrentDateTime());
+                                preparedStatement.setString(10, version);
+                                preparedStatement.setString(11, group);
+                                preparedStatement.setString(12, transCode3);
+
+                                preparedStatement.addBatch();
+                                totalRows++;
+                            }
+                        } else {
+                            List<String> permutations = PermutationUtil.getPermutations(combo);
+                            int numPermutations = permutations.size();
+                            shareAmount = totalAmount.divide(BigDecimal.valueOf(numPermutations), BigDecimal.ROUND_HALF_UP);
+
+                            for (String perm : permutations) {
+                                // Prepare entry for each permutation
+                                preparedStatement.setString(1, perm);
+                                preparedStatement.setBigDecimal(2, shareAmount);
+                                preparedStatement.setBigDecimal(3, prize);
+                                preparedStatement.setString(4, transCode2);
+                                preparedStatement.setString(5, game);
+                                preparedStatement.setString(6, drawTime);
+                                preparedStatement.setString(7, gameName);
+                                preparedStatement.setString(8, Name);
+                                preparedStatement.setString(9, getCurrentDateTime());
+                                preparedStatement.setString(10, version);
+                                preparedStatement.setString(11, group);
+                                preparedStatement.setString(12, transCode3);
+
+                                preparedStatement.addBatch();
+                                totalRows++;
+                            }
                         }
                     } else {
                         preparedStatement.setString(1, combo);

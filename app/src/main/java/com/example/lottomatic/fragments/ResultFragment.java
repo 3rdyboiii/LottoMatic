@@ -1,6 +1,7 @@
 package com.example.lottomatic.fragments;
 
 import android.content.Context;
+import android.icu.text.SimpleDateFormat;
 import android.os.Bundle;
 
 import androidx.fragment.app.Fragment;
@@ -28,7 +29,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -40,6 +43,7 @@ public class ResultFragment extends Fragment {
     TextView result3d;
     TextView result2d;
     View bodylayout;
+    View card4Dlayout;
     private ProgressBar progressBar;
     private RadioGroup drawGroup;
     ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -57,6 +61,7 @@ public class ResultFragment extends Fragment {
         result2d = v.findViewById(R.id.result2D);
 
         bodylayout = v.findViewById(R.id.bodylayout);
+        card4Dlayout = v.findViewById(R.id.card4Dlayout);
 
         // RADIO BUTTON GROUP
         drawGroup = v.findViewById(R.id.drawGroup); // ADD THIS ID IN XML
@@ -67,10 +72,13 @@ public class ResultFragment extends Fragment {
         drawGroup.setOnCheckedChangeListener((group, checkedId) -> {
             if (checkedId == R.id.draw2PM) {
                 selectedDraw = "2PM";
+                card4Dlayout.setVisibility(View.GONE);
             } else if (checkedId == R.id.draw5PM) {
                 selectedDraw = "5PM";
+                card4Dlayout.setVisibility(View.GONE);
             } else if (checkedId == R.id.draw9PM) {
                 selectedDraw = "9PM";
+                card4Dlayout.setVisibility(View.VISIBLE);
             }
             fetchResult(selectedDraw);
         });
@@ -119,6 +127,8 @@ public class ResultFragment extends Fragment {
         executor.execute(() -> {
             if (!isFragmentActive) return;
 
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            String currentDate = sdf.format(new Date());
             String result4 = "";
             String result3 = "";
             String result2 = "";
@@ -129,10 +139,11 @@ public class ResultFragment extends Fragment {
 
                 if (connection != null && isFragmentActive) {
 
-                    String query = "SELECT game, result FROM ResultTB WHERE draw = ? AND game IN ('4D', '3D', '2D') AND [group] = 'BICOL'";
+                    String query = "SELECT DISTINCT result, game FROM EntryTB WHERE game in ('4D', '3D', '2D') AND draw = ? AND CAST([date] as date) = ? and [group] = 'BICOL'";
 
                     try (PreparedStatement ps = connection.prepareStatement(query)) {
                         ps.setString(1, draw);
+                        ps.setString(2, currentDate);
 
                         try (ResultSet rs = ps.executeQuery()) {
                             while (rs.next() && isFragmentActive) {
@@ -166,9 +177,9 @@ public class ResultFragment extends Fragment {
                 getActivity().runOnUiThread(() -> {
                     if (!isFragmentActive) return;
 
-                    result4d.setText(final4.isEmpty() ? "----" : final4);
-                    result3d.setText(final3.isEmpty() ? "----" : final3);
-                    result2d.setText(final2.isEmpty() ? "----" : final2);
+                    result4d.setText(final4 == null || final4.isEmpty() ? "----" : final4);
+                    result3d.setText(final3 == null || final3.isEmpty() ? "----" : final3);
+                    result2d.setText(final2 == null || final2.isEmpty() ? "----" : final2);
 
                     showProgress(false);
                 });
